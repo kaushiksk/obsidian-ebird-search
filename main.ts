@@ -1,134 +1,182 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
-
-// Remember to rename these classes and interfaces!
+import { App, Plugin, PluginSettingTab, Setting, Modal } from 'obsidian';
+import './styles.css'
 
 interface MyPluginSettings {
-	mySetting: string;
+  folder: string;
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+  folder: 'eBird Notes'
+};
+
+const fileTemplate = `---
+commonName: {{commonName}}
+scientificName: {{scientificName}}
+ebirdUrl: {{ebirdUrl}}
+birdsOfTheWorldUrl: {{birdsoftheworldUrl}}
+---
+
+
+`;
+
+function generateFileContent(commonName: string, scientificName: string, ebirdUrl: string, birdsoftheworldUrl: string): string {
+  return fileTemplate
+    .replace(/{{commonName}}/g, commonName)
+    .replace(/{{scientificName}}/g, scientificName)
+    .replace(/{{ebirdUrl}}/g, ebirdUrl)
+    .replace(/{{birdsoftheworldUrl}}/g, birdsoftheworldUrl);
 }
 
 export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+  settings: MyPluginSettings;
 
-	async onload() {
-		await this.loadSettings();
+  async onload() {
+    await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+    this.addRibbonIcon('bird', 'Search eBird', () => {
+      this.openSearchModal();
+    });
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+    this.addCommand({
+      id: 'open-ebird-search',
+      name: 'Open eBird Search',
+      callback: () => this.openSearchModal()
+    });
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+    this.addSettingTab(new MyPluginSettingTab(this.app, this));
+  }
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
-
-	onunload() {
-
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+  openSearchModal() {
+    new SearchModal(this.app, this).open();
+  }
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class SearchModal extends Modal {
+  plugin: MyPlugin;
+  inputEl: HTMLInputElement;
+  resultsEl: HTMLElement;
+  activeIndex: number = 0;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+  constructor(app: App, plugin: MyPlugin) {
+    super(app);
+    this.plugin = plugin;
+  }
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('search-modal');
+
+    const containerEl = contentEl.createDiv({ cls: 'input-container' });
+    const titleEl = containerEl.createEl('h3', { text: 'Search eBird' });
+
+    this.inputEl = containerEl.createEl('input', { type: 'text', placeholder: 'Search eBird...' });
+    this.resultsEl = containerEl.createDiv();
+
+    this.inputEl.addEventListener('input', () => this.onInputChange());
+  }
+
+  async onInputChange() {
+    const query = this.inputEl.value;
+    if (query.length < 3) {
+      this.resultsEl.empty();
+      this.activeIndex = 0;
+      return;
+    }
+
+    const results = await this.searchEBird(query);
+    this.renderResults(results);
+  }
+
+  async searchEBird(query: string): Promise<any[]> {
+    const response = await fetch(`https://api.ebird.org/v2/ref/taxon/find?locale=en_US&cat=species&key=jfekjedvescr&q=${query}`);
+    const data = await response.json();
+    return data;
+  }
+
+  renderResults(results: any[]) {
+    this.resultsEl.empty();
+
+    results.forEach((result, index) => {
+      const resultEl = this.resultsEl.createDiv({ text: result.name });
+      resultEl.addClass('result');
+      resultEl.addEventListener('click', () => this.onResultClick(result));
+      resultEl.addEventListener('mouseover', () => this.setActiveIndex(index));
+    });
+  }
+
+  setActiveIndex(index: number) {
+    // Remove 'active' class from the previously active element
+    const previousActive = this.resultsEl.querySelector('.active');
+    if (previousActive) {
+      previousActive.classList.remove('active');
+    }
+  
+    // Add 'active' class to the new active element
+    const newActive = this.resultsEl.children[index];
+    if (newActive) {
+      newActive.classList.add('active');
+    }
+  
+    // Update the active index
+    this.activeIndex = index;
+  }
+
+  async onResultClick(result: any) {
+    const folderPath = this.plugin.settings.folder;
+    const [commonName, scientificName] = result.name.split(' - ');
+    
+    var fileName = `${commonName}.md`;
+    var filePath = `${folderPath}/${fileName}`;
+    const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+
+    const ebirdUrl = `https://ebird.org/species/${result.code}`;
+    const birdsoftheworldUrl = `https://birdsoftheworld.org/bow/species/${result.code}`;
+    const fileContent = generateFileContent(commonName, scientificName, ebirdUrl, birdsoftheworldUrl);
+
+    if (existingFile) {
+      fileName = `${commonName}-Copy.md`;
+      filePath = `${folderPath}/${fileName}`
+    }
+
+    await this.app.vault.create(filePath, fileContent);
+
+    this.close();
+  }
 }
 
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+class MyPluginSettingTab extends PluginSettingTab {
+  plugin: MyPlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+  constructor(app: App, plugin: MyPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
 
-	display(): void {
-		const {containerEl} = this;
+  display(): void {
+    const { containerEl } = this;
 
-		containerEl.empty();
+    containerEl.empty();
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
+    containerEl.createEl('h2', { text: 'Settings for eBird Plugin' });
+
+    new Setting(containerEl)
+      .setName('Folder')
+      .setDesc('Folder to save eBird notes')
+      .addText(text => text
+        .setPlaceholder('Enter folder name')
+        .setValue(this.plugin.settings.folder)
+        .onChange(async (value) => {
+          this.plugin.settings.folder = value;
+          await this.plugin.saveSettings();
+        }));
+  }
 }
