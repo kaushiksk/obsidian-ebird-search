@@ -3,10 +3,12 @@ import './styles.css'
 
 interface MyPluginSettings {
   folder: string;
+  ebirdApiKey: string; // New setting for eBird API key
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-  folder: 'eBird Notes'
+  folder: 'eBird Notes',
+  ebirdApiKey: 'jfekjedvescr' // Default value for eBird API key, from public search API
 };
 
 const fileTemplate = `---
@@ -97,7 +99,7 @@ class SearchModal extends Modal {
   }
 
   async searchEBird(query: string): Promise<any[]> {
-    const response = await fetch(`https://api.ebird.org/v2/ref/taxon/find?locale=en_US&cat=species&key=jfekjedvescr&q=${query}`);
+    const response = await fetch(`https://api.ebird.org/v2/ref/taxon/find?locale=en_US&cat=species&key=${this.plugin.settings.ebirdApiKey}&q=${query}`);
     const data = await response.json();
     return data;
   }
@@ -176,6 +178,17 @@ class MyPluginSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.folder)
         .onChange(async (value) => {
           this.plugin.settings.folder = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('eBird API Key')
+      .setDesc('API key for accessing eBird data')
+      .addText(text => text
+        .setPlaceholder('Enter eBird API key')
+        .setValue(this.plugin.settings.ebirdApiKey)
+        .onChange(async (value) => {
+          this.plugin.settings.ebirdApiKey = value;
           await this.plugin.saveSettings();
         }));
   }

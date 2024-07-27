@@ -3,8 +3,8 @@
 	"name": "Ebird Search",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Fetch details from Ebird",
-	"author": "Obsidian",
+	"description": "Fetch bird details from ebird and create a reference page",
+	"author": "kaushiksk",
 	"authorUrl": "https://obsidian.md",
 	"fundingUrl": "https://obsidian.md/pricing",
 	"isDesktopOnly": false
